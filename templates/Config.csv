@@ -1,0 +1,12 @@
+key,value,notes
+discount_threshold_1500,1500,滿1500起始閾值
+discount_rate_1500,0.9,折扣率
+discount_threshold_3000,3000,滿3000閾值
+discount_rate_3000,0.85,折扣率
+discount_threshold_5000,5000,滿5000閾值
+discount_rate_5000,0.8,折扣率
+discount_threshold_10000,10000,滿10000閾值
+discount_rate_10000,0.75,折扣率
+rounding_mode,ROUND,ROUND/CEIL/FLOOR
+rounding_unit,1,1 或 0.1
+allowed_payment_methods,BALANCE,本版固定BALANCE

@@ -1,0 +1,9 @@
+item_id,category,item_name,original_price,share_price,active,notes
+lash_001,EYELASH EXTENSION,輕盈上眼睫毛,668 / 998,598,TRUE,
+lash_002,EYELASH EXTENSION,設計全眼綜合,866 / 1298,778,TRUE,
+lash_003,EYELASH EXTENSION,歐美設計,1456 / 1596,1289,TRUE,
+vip_001,MISS EYE DOR VIP,日式睫毛,1568 / 1960,1398,TRUE,
+vip_002,MISS EYE DOR VIP,日式歐美睫毛,2288 / 2560,000,TRUE,share_price無效示例
+nail_001,美甲,手純色,298 / 468up,258 / 428,TRUE,區間價需本次實輸
+hair_001,髮型基礎,髮型師剪發 Hair cut,600up,367up,TRUE,up價需本次實輸
+color_001,染髮系列 COLOR,INNOA無氨染 No ammonia,980up,780up,TRUE,up價需本次實輸
