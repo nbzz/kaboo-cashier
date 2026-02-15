@@ -14,7 +14,7 @@ import type {
   TransactionRecord,
 } from "@/lib/types";
 
-const DB_NAME = "june-cashier-local-db";
+const DB_NAME = "kaboo-cashier-local-db";
 const DB_VERSION = 1;
 
 const STORE_PRICE_LIST = "price_list";
