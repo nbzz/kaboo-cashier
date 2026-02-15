@@ -15,6 +15,6 @@
 
 ## 商業授權聯絡
 
-- Email: licensing@example.com
+- Email: wiseteng@gmail.com
 
 > 在未取得商業授權前，任何與 AGPL 不相容的商業使用均不被允許。
