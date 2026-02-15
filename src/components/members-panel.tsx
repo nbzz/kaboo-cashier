@@ -982,14 +982,16 @@ export default function MembersPanel() {
           >
             {showForm && !selectedMember ? "收起新增" : "+ 新增會員"}
           </button>
-          <button
-            type="button"
-            onClick={addDemoMembers}
-            disabled={loading}
-            className="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            加入測試會員
-          </button>
+          {false && (
+            <button
+              type="button"
+              onClick={addDemoMembers}
+              disabled={loading}
+              className="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              加入測試會員
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
