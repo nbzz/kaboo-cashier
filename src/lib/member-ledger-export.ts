@@ -7,6 +7,36 @@ import { nowHongKong } from "@/lib/time";
 import type { Member, TransactionLineItem, TransactionRecord } from "@/lib/types";
 import * as XLSX from "xlsx";
 
+const MEMBER_IMPORT_TEMPLATE_HEADERS = [
+  "姓名",
+  "電話(唯一鍵)",
+  "電郵",
+  "餘額(HKD)",
+  "性別",
+  "生日(YYYY-MM-DD)",
+  "卡號",
+  "微信/WhatsApp",
+  "註冊日期(YYYY-MM-DD)",
+  "狀態(啟用/停用)",
+  "當前折扣檔位(如7.5折，可空)",
+  "備註",
+] as const;
+
+const MEMBER_IMPORT_TEMPLATE_COLS = [
+  { wch: 14 },
+  { wch: 14 },
+  { wch: 24 },
+  { wch: 14 },
+  { wch: 8 },
+  { wch: 16 },
+  { wch: 12 },
+  { wch: 18 },
+  { wch: 16 },
+  { wch: 12 },
+  { wch: 20 },
+  { wch: 28 },
+] as const;
+
 function formatMoney(value: number) {
   return `HK$${Number(value || 0).toLocaleString("zh-HK", {
     minimumFractionDigits: 2,
@@ -46,6 +76,14 @@ function rateToTierLabel(rate: number) {
   return "原價";
 }
 
+function formatRateInput(rate?: number) {
+  if (!Number.isFinite(rate) || !rate || rate <= 0 || rate > 1) {
+    return "";
+  }
+  const discount = (rate * 10).toFixed(rate * 10 % 1 === 0 ? 0 : 1);
+  return `${discount}折`;
+}
+
 function parseItemSummary(row: TransactionRecord) {
   if (row.txn_type === "TOPUP") {
     return "會員充值";
@@ -75,11 +113,78 @@ function sortTransactionsDesc(rows: TransactionRecord[]) {
   });
 }
 
-export async function buildMemberLedgerWorkbook() {
-  const [members, transactions] = await Promise.all([
+function isLikelyTestMember(member: Member) {
+  const name = member.name.trim().toLowerCase();
+  const notes = member.notes.trim().toLowerCase();
+  const email = member.email.trim().toLowerCase();
+  if (name === "示例會員_請刪除" || name.includes("測試") || name.includes("测试") || name.includes("demo")) {
+    return true;
+  }
+  if (notes.includes("測試") || notes.includes("测试") || notes.includes("demo") || notes.includes("示例")) {
+    return true;
+  }
+  if (email.endsWith("@example.com")) {
+    return true;
+  }
+  return false;
+}
+
+function createMemberImportTemplateRows(members?: Member[]) {
+  const rows: Array<Array<string | number>> = [
+    [...MEMBER_IMPORT_TEMPLATE_HEADERS],
+    [
+      "示例會員_請刪除",
+      "0912345678",
+      "demo@example.com",
+      5000,
+      "女",
+      "1995-10-10",
+      "VIP001",
+      "wechat_demo",
+      nowHongKong().bizDate,
+      "啟用",
+      "7.5折",
+      "示例行，導入前請刪除",
+    ],
+  ];
+  if (members && members.length > 0) {
+    rows.push(
+      ...members.map((member) => [
+        member.name,
+        member.phone,
+        member.email || "",
+        Number(member.balance.toFixed(2)),
+        member.gender || "",
+        member.birthday || "",
+        member.card_no || "",
+        member.wechat_or_whatsapp || "",
+        member.register_date || "",
+        member.active ? "啟用" : "停用",
+        formatRateInput(member.manual_locked_discount_rate),
+        member.notes || "",
+      ]),
+    );
+  }
+  return rows;
+}
+
+interface MemberLedgerWorkbookOptions {
+  includeTemplates?: boolean;
+  excludeTestData?: boolean;
+}
+
+export async function buildMemberLedgerWorkbook(options?: MemberLedgerWorkbookOptions) {
+  const includeTemplates = options?.includeTemplates ?? true;
+  const excludeTestData = options?.excludeTestData ?? false;
+  const [rawMembers, rawTransactions] = await Promise.all([
     getMembersLocal({ includeInactive: true, limit: 100000 }),
     getTransactionsLocal(),
   ]);
+  const members = excludeTestData ? rawMembers.filter((member) => !isLikelyTestMember(member)) : rawMembers;
+  const memberIdSet = new Set(members.map((member) => member.member_id));
+  const transactions = excludeTestData
+    ? rawTransactions.filter((row) => !row.member_id || memberIdSet.has(row.member_id))
+    : rawTransactions;
 
   const statsMap = buildMemberStats(members, transactions);
   const memberMap = new Map(members.map((member) => [member.member_id, member]));
@@ -123,6 +228,7 @@ export async function buildMemberLedgerWorkbook() {
       transactions,
       undefined,
       0,
+      member.manual_locked_discount_rate,
     );
     summaryRows.push([
       "查看流水",
@@ -191,6 +297,7 @@ export async function buildMemberLedgerWorkbook() {
       transactions,
       undefined,
       0,
+      member.manual_locked_discount_rate,
     );
 
     const rows: Array<Array<string | number>> = [
@@ -272,99 +379,62 @@ export async function buildMemberLedgerWorkbook() {
     XLSX.utils.book_append_sheet(workbook, memberSheet, sheetName);
   });
 
-  const memberTemplateRows: Array<Array<string | number>> = [
-    [
-      "姓名",
-      "電話(唯一鍵)",
-      "電郵",
-      "餘額(HKD)",
-      "性別",
-      "生日(YYYY-MM-DD)",
-      "卡號",
-      "微信/WhatsApp",
-      "註冊日期(YYYY-MM-DD)",
-      "狀態(啟用/停用)",
-      "備註",
-    ],
-    ...sortedMembers.map((member) => [
-      member.name,
-      member.phone,
-      member.email || "",
-      Number(member.balance.toFixed(2)),
-      member.gender || "",
-      member.birthday || "",
-      member.card_no || "",
-      member.wechat_or_whatsapp || "",
-      member.register_date || "",
-      member.active ? "啟用" : "停用",
-      member.notes || "",
-    ]),
-  ];
-  const memberTemplateSheet = XLSX.utils.aoa_to_sheet(memberTemplateRows);
-  memberTemplateSheet["!cols"] = [
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 24 },
-    { wch: 14 },
-    { wch: 8 },
-    { wch: 16 },
-    { wch: 12 },
-    { wch: 18 },
-    { wch: 16 },
-    { wch: 12 },
-    { wch: 24 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, memberTemplateSheet, "導入模板_會員");
+  if (includeTemplates) {
+    const memberTemplateRows = createMemberImportTemplateRows(sortedMembers);
+    const memberTemplateSheet = XLSX.utils.aoa_to_sheet(memberTemplateRows);
+    memberTemplateSheet["!cols"] = [...MEMBER_IMPORT_TEMPLATE_COLS];
+    XLSX.utils.book_append_sheet(workbook, memberTemplateSheet, "導入模板_會員");
 
-  const txnTemplateRows: Array<Array<string | number>> = [
-    [
-      "會員電話(可空=散客)",
-      "日期(YYYY-MM-DD)",
-      "時間(HH:mm)",
-      "類型(TOPUP/SPEND)",
-      "項目摘要",
-      "折前金額(HKD)",
-      "折扣(%)",
-      "會員扣款(HKD)",
-      "另收金額(HKD)",
-      "餘額前(HKD)",
-      "餘額後(HKD)",
-      "備註",
-    ],
-  ];
-  sortTransactionsDesc(transactions).forEach((row) => {
-    const member = memberMap.get(row.member_id);
-    txnTemplateRows.push([
-      member?.phone || "",
-      row.biz_date,
-      row.biz_time,
-      row.txn_type,
-      parseItemSummary(row),
-      Number(row.gross_amount.toFixed(2)),
-      Number((row.discount_rate * 100).toFixed(2)),
-      Number(row.net_amount.toFixed(2)),
-      Number((row.external_pay_amount ?? 0).toFixed(2)),
-      Number(row.balance_before.toFixed(2)),
-      Number(row.balance_after.toFixed(2)),
-      row.notes || "",
-    ]);
-  });
-  const txnTemplateSheet = XLSX.utils.aoa_to_sheet(txnTemplateRows);
-  txnTemplateSheet["!cols"] = [
-    { wch: 18 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 16 },
-    { wch: 42 },
-    { wch: 14 },
-    { wch: 10 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 14 },
-    { wch: 24 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, txnTemplateSheet, "導入模板_流水");
+    const txnTemplateRows: Array<Array<string | number>> = [
+      [
+        "會員電話(可空=散客)",
+        "日期(YYYY-MM-DD)",
+        "時間(HH:mm)",
+        "類型(TOPUP/SPEND)",
+        "項目摘要",
+        "折前金額(HKD)",
+        "折扣(%)",
+        "會員扣款(HKD)",
+        "另收金額(HKD)",
+        "餘額前(HKD)",
+        "餘額後(HKD)",
+        "備註",
+      ],
+    ];
+    sortTransactionsDesc(transactions).forEach((row) => {
+      const member = memberMap.get(row.member_id);
+      txnTemplateRows.push([
+        member?.phone || "",
+        row.biz_date,
+        row.biz_time,
+        row.txn_type,
+        parseItemSummary(row),
+        Number(row.gross_amount.toFixed(2)),
+        Number((row.discount_rate * 100).toFixed(2)),
+        Number(row.net_amount.toFixed(2)),
+        Number((row.external_pay_amount ?? 0).toFixed(2)),
+        Number(row.balance_before.toFixed(2)),
+        Number(row.balance_after.toFixed(2)),
+        row.notes || "",
+      ]);
+    });
+    const txnTemplateSheet = XLSX.utils.aoa_to_sheet(txnTemplateRows);
+    txnTemplateSheet["!cols"] = [
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 42 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 24 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, txnTemplateSheet, "導入模板_流水");
+  }
 
   const exportDate = nowHongKong().bizDate;
   const fileName = `會員總覽與流水_${exportDate}.xlsx`;
@@ -376,7 +446,38 @@ export async function exportMemberLedgerWorkbookBase64() {
   return XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
 }
 
+export async function exportMemberBackupWorkbookBase64() {
+  const { workbook } = await buildMemberLedgerWorkbook({
+    includeTemplates: false,
+    excludeTestData: true,
+  });
+  return XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
+}
+
 export async function exportMemberLedgerWorkbook() {
   const { workbook, fileName } = await buildMemberLedgerWorkbook();
+  XLSX.writeFile(workbook, fileName);
+}
+
+export async function exportMemberImportTemplateWorkbook() {
+  const workbook = XLSX.utils.book_new();
+  const guideRows: Array<Array<string>> = [
+    ["會員導入說明"],
+    ["1. 必填：姓名、電話(唯一鍵)、餘額(HKD)。"],
+    ["2. 當前折扣檔位填法：7.5折 / 8折 / 8.5折 / 9折；留空=按餘額自動算。"],
+    ["3. 初次上線不導入舊流水也可以，系統會按『當前餘額 + 當前折扣檔位』直接開單。"],
+    ["4. 同電話重複導入時，系統會逐條詢問是否覆蓋。"],
+    ["5. 範例行會自動跳過，不會真的入庫。"],
+  ];
+  const guideSheet = XLSX.utils.aoa_to_sheet(guideRows);
+  guideSheet["!cols"] = [{ wch: 100 }];
+  XLSX.utils.book_append_sheet(workbook, guideSheet, "使用說明");
+
+  const templateRows = createMemberImportTemplateRows();
+  const templateSheet = XLSX.utils.aoa_to_sheet(templateRows);
+  templateSheet["!cols"] = [...MEMBER_IMPORT_TEMPLATE_COLS];
+  XLSX.utils.book_append_sheet(workbook, templateSheet, "導入模板_會員");
+
+  const fileName = `會員導入模板_${nowHongKong().bizDate}.xlsx`;
   XLSX.writeFile(workbook, fileName);
 }

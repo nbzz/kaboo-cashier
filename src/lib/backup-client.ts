@@ -3,7 +3,7 @@ import {
   loadBackupMailSettings,
   parseRecipientList,
 } from "@/lib/backup-settings";
-import { exportMemberLedgerWorkbookBase64 } from "@/lib/member-ledger-export";
+import { exportMemberBackupWorkbookBase64 } from "@/lib/member-ledger-export";
 import { exportStoreLedgerWorkbookBase64 } from "@/lib/store-ledger-export";
 import { nowHongKong } from "@/lib/time";
 
@@ -63,7 +63,7 @@ export async function runDailyBackup(force = false): Promise<BackupRunResult> {
   try {
     const backupDate = nowHongKong().bizDate;
     const [memberXlsxBase64, storeXlsxBase64] = await Promise.all([
-      exportMemberLedgerWorkbookBase64(),
+      exportMemberBackupWorkbookBase64(),
       exportStoreLedgerWorkbookBase64("ALL"),
     ]);
 

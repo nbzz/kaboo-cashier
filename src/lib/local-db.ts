@@ -227,10 +227,13 @@ export async function deletePriceItemsByCategoryLocal(category: string) {
 }
 
 function normalizeMember(member: Member): Member {
-  const raw = member as Member & { email?: unknown };
+  const raw = member as Member & { email?: unknown; manual_locked_discount_rate?: unknown };
+  const manualRate = Number(raw.manual_locked_discount_rate);
   return {
     ...raw,
     email: typeof raw.email === "string" ? raw.email : "",
+    manual_locked_discount_rate:
+      Number.isFinite(manualRate) && manualRate > 0 && manualRate <= 1 ? manualRate : undefined,
     active: member.active ?? true,
   };
 }

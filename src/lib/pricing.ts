@@ -174,6 +174,7 @@ export function getLockedDiscountRateFromTransactions(
   transactions: TransactionRecord[],
   tiers?: DiscountTier[],
   pendingTopupAmount = 0,
+  manualLockedRate?: number,
 ) {
   const balanceAfterTopup = Math.max(memberBalance, 0) + Math.max(pendingTopupAmount, 0);
   if (balanceAfterTopup <= 0) {
@@ -204,13 +205,27 @@ export function getLockedDiscountRateFromTransactions(
     }
   });
 
-  if (pendingTopupAmount > 0) {
-    const pendingRate = getDiscountRateByTopupAmount(pendingTopupAmount, tiers);
-    cycleRate = cycleRate === null ? pendingRate : Math.min(cycleRate, pendingRate);
-  }
+  const pendingRate = pendingTopupAmount > 0 ? getDiscountRateByTopupAmount(pendingTopupAmount, tiers) : null;
+  const manualRate = Number(manualLockedRate);
+  const hasManualRate = Number.isFinite(manualRate) && manualRate > 0 && manualRate <= 1;
 
   if (cycleRate !== null) {
+    if (pendingRate !== null) {
+      return Math.min(cycleRate, pendingRate);
+    }
     return cycleRate;
+  }
+
+  // 导入会员可手动设置当前档位：只在还有原余额时生效；余额用完后自动失效。
+  if (memberBalance > 0 && hasManualRate) {
+    if (pendingRate !== null) {
+      return Math.min(manualRate, pendingRate);
+    }
+    return manualRate;
+  }
+
+  if (pendingRate !== null) {
+    return pendingRate;
   }
 
   // 兜底：历史老数据没有充值流水时，仍可按当前余额档位计算。
@@ -324,6 +339,7 @@ export interface PaymentSettlementInput {
   memberDeductAmount: number;
   externalPayAmount: number;
   extraDiscountAmount?: number;
+  applyFloorDiscount?: boolean;
 }
 
 export interface PaymentSettlementResult {
@@ -341,10 +357,11 @@ export function settlePayableWithExtraDiscount(
   const memberBeforeAdjust = Math.max(input.memberDeductAmount, 0);
   const externalBeforeAdjust = Math.max(input.externalPayAmount, 0);
   const totalBeforeFloor = memberBeforeAdjust + externalBeforeAdjust;
+  const shouldApplyFloor = Boolean(input.applyFloorDiscount);
 
-  // Step 1: floor first.
-  const totalAfterFloor = Math.floor(totalBeforeFloor);
-  const floorDiscountApplied = Math.max(totalBeforeFloor - totalAfterFloor, 0);
+  // Step 1: optional floor first.
+  const totalAfterFloor = shouldApplyFloor ? Math.floor(totalBeforeFloor) : totalBeforeFloor;
+  const floorDiscountApplied = shouldApplyFloor ? Math.max(totalBeforeFloor - totalAfterFloor, 0) : 0;
 
   let memberDeduct = memberBeforeAdjust;
   let externalPay = externalBeforeAdjust;

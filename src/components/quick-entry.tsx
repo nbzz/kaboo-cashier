@@ -207,6 +207,7 @@ export default function QuickEntry() {
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [topupAmount, setTopupAmount] = useState<number>(0);
   const [extraDiscountAmount, setExtraDiscountAmount] = useState<number>(0);
+  const [applyFloorDiscount, setApplyFloorDiscount] = useState<boolean>(false);
   const [showTopupPanel, setShowTopupPanel] = useState(false);
   const [showManualDiscountPanel, setShowManualDiscountPanel] = useState(false);
   const [notes, setNotes] = useState("");
@@ -391,6 +392,7 @@ export default function QuickEntry() {
             transactions,
             config.discountTiers,
             topupAmount,
+            selectedMember.manual_locked_discount_rate,
           )
         : 1;
       const lineRows = lines.map((line) => ({
@@ -424,6 +426,7 @@ export default function QuickEntry() {
         memberDeductAmount: memberDeduct,
         externalPayAmount: externalPay,
         extraDiscountAmount,
+        applyFloorDiscount: selectedMember ? applyFloorDiscount : true,
       });
       memberDeduct = settled.memberDeductAmount;
       externalPay = settled.externalPayAmount;
@@ -493,7 +496,7 @@ export default function QuickEntry() {
     } catch {
       return null;
     }
-  }, [selectedMember, config, selectedItems, priceMap, topupAmount, extraDiscountAmount, transactions]);
+  }, [selectedMember, config, selectedItems, priceMap, topupAmount, extraDiscountAmount, applyFloorDiscount, transactions]);
 
   const categoryItems = useMemo(
     () => priceList.filter((item) => item.category === activeCategory),
@@ -511,6 +514,7 @@ export default function QuickEntry() {
       transactions,
       config.discountTiers,
       0,
+      selectedMember.manual_locked_discount_rate,
     );
   }, [selectedMember, config, transactions]);
 
@@ -765,6 +769,7 @@ export default function QuickEntry() {
         items: selectedItems,
         topup_amount: topupAmount,
         extra_discount_amount: extraDiscountAmount,
+        apply_floor_discount: selectedMember ? applyFloorDiscount : true,
         notes,
         discount_reason: discountReason,
         source_device: detectDevice(),
@@ -818,6 +823,7 @@ export default function QuickEntry() {
       setSelectedItems([]);
       setTopupAmount(0);
       setExtraDiscountAmount(0);
+      setApplyFloorDiscount(false);
       setShowTopupPanel(false);
       setShowManualDiscountPanel(false);
       setNotes("");
@@ -1462,10 +1468,20 @@ export default function QuickEntry() {
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {t(
-                  "結算順序：先去小數，再套用手動優惠。",
-                  "Settlement order: remove decimals first, then apply manual discount.",
+                  "可選抹小數（向下取整），再套用手動優惠。",
+                  "Optional decimal floor first, then apply manual discount.",
                 )}
               </p>
+              {selectedMember && (
+                <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={applyFloorDiscount}
+                    onChange={(event) => setApplyFloorDiscount(event.target.checked)}
+                  />
+                  {t("抹小數（向下取整）", "Floor decimals")}
+                </label>
+              )}
               <div className="mt-2 flex items-center gap-2">
                 <label className="text-sm text-slate-600">
                   {t("手動優惠 HKD", "Manual discount HKD")}

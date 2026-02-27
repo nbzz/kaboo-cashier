@@ -32,6 +32,7 @@ interface CheckoutInput {
   topup_amount: number;
   guest_gender?: "女" | "男";
   extra_discount_amount?: number;
+  apply_floor_discount?: boolean;
   notes?: string;
   discount_reason?: string;
   source_device: SourceDevice;
@@ -239,6 +240,7 @@ export async function executeCheckoutLocal(payload: CheckoutInput) {
         transactions,
         config.discountTiers,
         payload.topup_amount,
+        member?.manual_locked_discount_rate,
       )
     : 1;
   const { grossAmount, netAmount } = computeOrderAmounts(lineItems, discountRate);
@@ -263,6 +265,7 @@ export async function executeCheckoutLocal(payload: CheckoutInput) {
     memberDeductAmount,
     externalPayAmount,
     extraDiscountAmount: extraDiscountInput,
+    applyFloorDiscount: isMemberCheckout ? Boolean(payload.apply_floor_discount) : true,
   });
   memberDeductAmount = settled.memberDeductAmount;
   externalPayAmount = settled.externalPayAmount;

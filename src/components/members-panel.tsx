@@ -68,6 +68,7 @@ interface MemberForm {
   phone: string;
   email: string;
   balance: string;
+  manual_discount_tier: string;
   gender: string;
   birthday: string;
   card_no: string;
@@ -80,6 +81,7 @@ const EMPTY_MEMBER_FORM: MemberForm = {
   phone: "",
   email: "",
   balance: "",
+  manual_discount_tier: "",
   gender: "",
   birthday: "",
   card_no: "",
@@ -205,6 +207,10 @@ function toMemberForm(member: Member | null): MemberForm {
     phone: member.phone,
     email: member.email,
     balance: String(member.balance),
+    manual_discount_tier:
+      member.manual_locked_discount_rate === undefined
+        ? ""
+        : rateToTierLabel(member.manual_locked_discount_rate),
     gender: member.gender,
     birthday: member.birthday,
     card_no: member.card_no,
@@ -343,6 +349,7 @@ export default function MembersPanel() {
           allTransactions,
           configRules?.discountTiers,
           0,
+          member.manual_locked_discount_rate,
         ),
       );
     });
@@ -603,6 +610,23 @@ export default function MembersPanel() {
       if (!Number.isFinite(balance) || balance < 0) {
         throw new Error("餘額格式不正確");
       }
+      const tierText = form.manual_discount_tier.trim();
+      let manualLockedRate: number | undefined;
+      if (tierText && tierText !== "原價") {
+        const match = tierText.match(/^(\d+(?:\.\d+)?)折$/);
+        if (!match) {
+          throw new Error("當前折扣檔位格式錯誤，請填 7.5折");
+        }
+        const fold = Number(match[1]);
+        if (!Number.isFinite(fold) || fold <= 0 || fold > 10) {
+          throw new Error("當前折扣檔位超出範圍，請填 1折 到 10折");
+        }
+        manualLockedRate = fold / 10;
+      } else if (tierText === "原價") {
+        manualLockedRate = 1;
+      } else {
+        manualLockedRate = undefined;
+      }
 
       const isCreate = !selectedMember;
       const nowInfo = nowHongKong();
@@ -614,6 +638,7 @@ export default function MembersPanel() {
         phone: trimmedPhone,
         email: form.email.trim(),
         balance,
+        manual_locked_discount_rate: manualLockedRate,
         active: selectedMember?.active ?? true,
         gender: form.gender.trim(),
         birthday: form.birthday.trim(),
@@ -1058,6 +1083,18 @@ export default function MembersPanel() {
               placeholder="餘額*"
               className="h-10 rounded-lg border border-slate-200 px-3"
             />
+            <select
+              value={form.manual_discount_tier}
+              onChange={(event) => setForm((prev) => ({ ...prev, manual_discount_tier: event.target.value }))}
+              className="h-10 rounded-lg border border-slate-200 px-3 text-slate-700"
+            >
+              <option value="">當前折扣檔位（可選，自動按餘額）</option>
+              <option value="7.5折">7.5折</option>
+              <option value="8折">8折</option>
+              <option value="8.5折">8.5折</option>
+              <option value="9折">9折</option>
+              <option value="原價">原價</option>
+            </select>
             <input
               value={form.gender}
               onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))}
@@ -1235,6 +1272,18 @@ export default function MembersPanel() {
               placeholder="餘額*"
               className="h-10 rounded-lg border border-slate-200 px-3"
             />
+            <select
+              value={form.manual_discount_tier}
+              onChange={(event) => setForm((prev) => ({ ...prev, manual_discount_tier: event.target.value }))}
+              className="h-10 rounded-lg border border-slate-200 px-3 text-slate-700"
+            >
+              <option value="">當前折扣檔位（可選，自動按餘額）</option>
+              <option value="7.5折">7.5折</option>
+              <option value="8折">8折</option>
+              <option value="8.5折">8.5折</option>
+              <option value="9折">9折</option>
+              <option value="原價">原價</option>
+            </select>
             <input
               value={form.gender}
               onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))}

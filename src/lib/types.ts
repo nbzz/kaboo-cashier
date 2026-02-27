@@ -42,6 +42,7 @@ export interface Member {
   phone: string;
   email: string;
   balance: number;
+  manual_locked_discount_rate?: number;
   active: boolean;
   gender: string;
   birthday: string;
