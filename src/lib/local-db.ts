@@ -36,6 +36,18 @@ export interface MemberQueryOptions {
   limit?: number;
 }
 
+export interface BackupPayloadV1 {
+  version: number;
+  exported_at: string;
+  data: {
+    priceList: PriceItem[];
+    storeProfile: StoreProfile;
+    members: Member[];
+    transactions: TransactionRecord[];
+    config: ConfigRules;
+  };
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function requestToPromise<T>(request: IDBRequest<T>) {
@@ -235,6 +247,71 @@ function normalizeMember(member: Member): Member {
     manual_locked_discount_rate:
       Number.isFinite(manualRate) && manualRate > 0 && manualRate <= 1 ? manualRate : undefined,
     active: member.active ?? true,
+  };
+}
+
+function normalizeTransactionRecord(
+  row: Partial<TransactionRecord> | null | undefined,
+): TransactionRecord {
+  const nowIso = new Date().toISOString();
+  const nowBizDate = nowIso.slice(0, 10);
+  const raw = row ?? {};
+  const toNumber = (value: unknown, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const txnType = raw.txn_type === "TOPUP" ? "TOPUP" : "SPEND";
+  const discountRate = toNumber(raw.discount_rate, 1);
+  const sourceDevice = raw.source_device === "Phone" ? "Phone" : "iPad";
+  const settlementMode =
+    raw.settlement_mode === "FULL_BALANCE" ||
+    raw.settlement_mode === "PARTIAL_BALANCE" ||
+    raw.settlement_mode === "WALKIN_ORIGINAL" ||
+    raw.settlement_mode === "TOPUP"
+      ? raw.settlement_mode
+      : txnType === "TOPUP"
+        ? "TOPUP"
+        : "WALKIN_ORIGINAL";
+
+  return {
+    txn_id: typeof raw.txn_id === "string" && raw.txn_id.trim() ? raw.txn_id : crypto.randomUUID(),
+    request_id:
+      typeof raw.request_id === "string" && raw.request_id.trim()
+        ? raw.request_id
+        : `restore-${crypto.randomUUID()}`,
+    txn_type: txnType,
+    created_at: typeof raw.created_at === "string" && raw.created_at ? raw.created_at : nowIso,
+    biz_date: typeof raw.biz_date === "string" && raw.biz_date ? raw.biz_date : nowBizDate,
+    biz_time: typeof raw.biz_time === "string" && raw.biz_time ? raw.biz_time : "00:00",
+    member_id: typeof raw.member_id === "string" ? raw.member_id : "",
+    member_name_snapshot:
+      typeof raw.member_name_snapshot === "string" ? raw.member_name_snapshot : "",
+    customer_gender: raw.customer_gender === "男" || raw.customer_gender === "女" ? raw.customer_gender : undefined,
+    items_json: typeof raw.items_json === "string" ? raw.items_json : "",
+    gross_amount: toNumber(raw.gross_amount, 0),
+    discount_rate:
+      Number.isFinite(discountRate) && discountRate > 0 && discountRate <= 1 ? discountRate : 1,
+    net_amount: toNumber(raw.net_amount, 0),
+    external_pay_amount: toNumber(raw.external_pay_amount, 0),
+    extra_discount_amount: toNumber(raw.extra_discount_amount, 0),
+    floor_discount_amount: toNumber(raw.floor_discount_amount, 0),
+    settlement_mode: settlementMode,
+    pricing_basis: raw.pricing_basis === "share_price" ? "share_price" : "original_price",
+    manual_price_adjusted: Boolean(raw.manual_price_adjusted),
+    payment_method: "BALANCE",
+    balance_before: toNumber(raw.balance_before, 0),
+    balance_after: toNumber(raw.balance_after, 0),
+    notes: typeof raw.notes === "string" ? raw.notes : "",
+    discount_reason: typeof raw.discount_reason === "string" ? raw.discount_reason : "",
+    source_device: sourceDevice,
+    reversal_of_txn_id:
+      typeof raw.reversal_of_txn_id === "string" && raw.reversal_of_txn_id
+        ? raw.reversal_of_txn_id
+        : undefined,
+    reversed_by_txn_id:
+      typeof raw.reversed_by_txn_id === "string" && raw.reversed_by_txn_id
+        ? raw.reversed_by_txn_id
+        : undefined,
   };
 }
 
@@ -455,7 +532,7 @@ export async function saveStoreProfileLocal(profile: Partial<StoreProfile>) {
   return normalized;
 }
 
-export async function exportBackupPayload() {
+export async function exportBackupPayload(): Promise<BackupPayloadV1> {
   const [priceList, members, transactions, config, storeProfile] = await Promise.all([
     getPriceListLocal(),
     getMembersLocal({ includeInactive: true, limit: 100000 }),
@@ -474,5 +551,79 @@ export async function exportBackupPayload() {
       transactions,
       config,
     },
+  };
+}
+
+export async function restoreBackupPayload(payload: unknown) {
+  await initLocalDb();
+  if (!payload || typeof payload !== "object") {
+    throw new Error("備份內容格式錯誤");
+  }
+
+  const typed = payload as Partial<BackupPayloadV1>;
+  if (typed.version !== 1 || !typed.data || typeof typed.data !== "object") {
+    throw new Error("不支持的備份版本，請使用系統生成的 JSON 備份");
+  }
+
+  const priceListRaw = Array.isArray(typed.data.priceList) ? typed.data.priceList : [];
+  const membersRaw = Array.isArray(typed.data.members) ? typed.data.members : [];
+  const transactionsRaw = Array.isArray(typed.data.transactions) ? typed.data.transactions : [];
+  const configRaw = typed.data.config;
+  const storeProfileRaw = typed.data.storeProfile;
+
+  if (!configRaw || !storeProfileRaw) {
+    throw new Error("備份缺少配置或店鋪資料");
+  }
+
+  const priceList = priceListRaw
+    .filter((item): item is PriceItem => Boolean(item && typeof item.item_id === "string" && item.item_id))
+    .map((item) =>
+      withDefaultPriceItemTranslation({
+        ...item,
+        category_en: item.category_en ?? "",
+        item_name_en: item.item_name_en ?? "",
+      }),
+    );
+  const members = membersRaw
+    .filter((member): member is Member => Boolean(member && typeof member.member_id === "string" && member.member_id))
+    .map((member) => normalizeMember(member));
+  const transactions = transactionsRaw.map((row) => normalizeTransactionRecord(row));
+  const normalizedConfig = normalizeConfigRules(configRaw);
+  const normalizedStoreProfile = normalizeStoreProfile(storeProfileRaw);
+
+  await withStore(STORE_PRICE_LIST, "readwrite", async (store) => {
+    store.clear();
+    priceList.forEach((item) => store.put(item));
+    return undefined;
+  });
+
+  await withStore(STORE_MEMBERS, "readwrite", async (store) => {
+    store.clear();
+    members.forEach((member) => store.put(member));
+    return undefined;
+  });
+
+  await withStore(STORE_TRANSACTIONS, "readwrite", async (store) => {
+    store.clear();
+    transactions.forEach((row) => store.put(row));
+    return undefined;
+  });
+
+  await withStore(STORE_CONFIG, "readwrite", async (store) => {
+    store.put({ key: CONFIG_KEY, value: normalizedConfig });
+    return undefined;
+  });
+
+  await withStore(STORE_META, "readwrite", async (store) => {
+    store.put({ key: STORE_PROFILE_KEY, value: normalizedStoreProfile });
+    return undefined;
+  });
+
+  setPreferredCurrencyCode(normalizedConfig.currencyCode);
+
+  return {
+    priceList: priceList.length,
+    members: members.length,
+    transactions: transactions.length,
   };
 }

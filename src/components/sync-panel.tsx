@@ -8,7 +8,7 @@ import {
   saveBackupMailSettings,
   type BackupMailSettings,
 } from "@/lib/backup-settings";
-import { getMembersLocal, upsertMemberLocal } from "@/lib/local-db";
+import { getMembersLocal, restoreBackupPayload, upsertMemberLocal } from "@/lib/local-db";
 import { exportMemberImportTemplateWorkbook, exportMemberLedgerWorkbook } from "@/lib/member-ledger-export";
 import { exportStoreLedgerWorkbook } from "@/lib/store-ledger-export";
 import { nowHongKong } from "@/lib/time";
@@ -81,10 +81,12 @@ export default function SyncPanel() {
   const [exportingMember, setExportingMember] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [importingMember, setImportingMember] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
   const [exportingStore, setExportingStore] = useState(false);
   const [storeRange, setStoreRange] = useState<AnalysisRange>("30D");
   const [smtpSettings, setSmtpSettings] = useState<BackupMailSettings>(getDefaultBackupMailSettings);
   const memberImportInputRef = useRef<HTMLInputElement | null>(null);
+  const backupRestoreInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setSmtpSettings(loadBackupMailSettings());
@@ -98,7 +100,7 @@ export default function SyncPanel() {
       setSmtpSettings(normalized);
       const result = await runDailyBackup(true);
       if (result === "success") {
-        setMessage("數據同步完成，已寄送會員與店鋪流水 Excel");
+        setMessage("數據同步完成，已寄送會員Excel、店鋪流水Excel、完整恢復JSON");
       } else if (result === "missing-config") {
         setMessage("請先填好 SMTP、發件人和收件人，再同步");
       } else {
@@ -283,12 +285,37 @@ export default function SyncPanel() {
     }
   }
 
+  async function importBackupJson(file: File) {
+    setRestoringBackup(true);
+    setMessage("");
+    try {
+      const confirmed = window.confirm(
+        "恢復會覆蓋當前設備全部資料（價目表、會員、流水、配置）。確定繼續？",
+      );
+      if (!confirmed) {
+        setMessage("已取消恢復");
+        return;
+      }
+      const text = await file.text();
+      const payload = JSON.parse(text) as unknown;
+      const result = await restoreBackupPayload(payload);
+      setMessage(`恢復完成：價目 ${result.priceList}，會員 ${result.members}，流水 ${result.transactions}。正在刷新...`);
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 600);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "備份恢復失敗，請確認使用郵件中的 JSON 附件");
+    } finally {
+      setRestoringBackup(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900">郵件同步配置</h2>
         <p className="mt-2 text-sm text-slate-600">
-          每日首次聯網，會自動寄出兩份全量 Excel（會員資料、店鋪流水）。
+          每日首次聯網，會自動寄出兩份全量 Excel + 一份完整恢復 JSON。
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <input
@@ -357,7 +384,7 @@ export default function SyncPanel() {
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900">數據同步</h2>
         <p className="mt-2 text-sm text-slate-600">
-          系統會在每日首次聯網時自動同步並發送全量 Excel，若失敗會每30分鐘自動重試。
+          系統會在每日首次聯網時自動同步並發送全量 Excel + 完整恢復 JSON，若失敗會每30分鐘自動重試。
         </p>
         <button
           type="button"
@@ -367,6 +394,34 @@ export default function SyncPanel() {
         >
           {syncing ? "同步中..." : "立即同步"}
         </button>
+      </section>
+
+      <section className="rounded-2xl bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900">從郵件備份恢復（多設備同步）</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          到備份郵箱下載附件 <code>kaboo-backup-full-日期.json</code>，在這裡導入即可恢復或同步到新設備。
+        </p>
+        <button
+          type="button"
+          onClick={() => backupRestoreInputRef.current?.click()}
+          disabled={restoringBackup}
+          className="mt-3 h-11 w-full rounded-xl bg-amber-600 font-semibold text-white disabled:opacity-60"
+        >
+          {restoringBackup ? "恢復中..." : "導入備份 JSON 並覆蓋恢復"}
+        </button>
+        <input
+          ref={backupRestoreInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void importBackupJson(file);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
       </section>
 
       <section className="rounded-2xl bg-white p-4 shadow-sm">

@@ -3,6 +3,7 @@ import {
   loadBackupMailSettings,
   parseRecipientList,
 } from "@/lib/backup-settings";
+import { exportBackupPayload } from "@/lib/local-db";
 import { exportMemberBackupWorkbookBase64 } from "@/lib/member-ledger-export";
 import { exportStoreLedgerWorkbookBase64 } from "@/lib/store-ledger-export";
 import { nowHongKong } from "@/lib/time";
@@ -15,6 +16,15 @@ const RETRY_INTERVAL_MS = 30 * 60 * 1000;
 let running = false;
 
 export type BackupRunResult = "success" | "skipped" | "missing-config" | "failed";
+
+function encodeBase64Utf8(input: string) {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
 
 function getDeviceId() {
   const existing = localStorage.getItem(DEVICE_ID_KEY);
@@ -62,10 +72,12 @@ export async function runDailyBackup(force = false): Promise<BackupRunResult> {
 
   try {
     const backupDate = nowHongKong().bizDate;
-    const [memberXlsxBase64, storeXlsxBase64] = await Promise.all([
+    const [memberXlsxBase64, storeXlsxBase64, backupPayload] = await Promise.all([
       exportMemberBackupWorkbookBase64(),
       exportStoreLedgerWorkbookBase64("ALL"),
+      exportBackupPayload(),
     ]);
+    const backupJsonBase64 = encodeBase64Utf8(JSON.stringify(backupPayload));
 
     const response = await fetch("/api/backup/email", {
       method: "POST",
@@ -94,6 +106,11 @@ export async function runDailyBackup(force = false): Promise<BackupRunResult> {
             content_type:
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             content_base64: storeXlsxBase64,
+          },
+          {
+            filename: `kaboo-backup-full-${backupDate}.json`,
+            content_type: "application/json",
+            content_base64: backupJsonBase64,
           },
         ],
       }),

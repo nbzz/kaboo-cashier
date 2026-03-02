@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       from: parsed.smtp.from,
       to: recipients.join(","),
       subject: `會員與店鋪流水備份 ${parsed.backup_date}`,
-      text: `自動備份已完成\n日期: ${parsed.backup_date}\n設備: ${parsed.device_id}\n附件: 正式會員資料 + 店鋪流水`,
+      text: `自動備份已完成\n日期: ${parsed.backup_date}\n設備: ${parsed.device_id}\n附件: 會員資料Excel + 店鋪流水Excel + 完整恢復JSON`,
       attachments: parsed.attachments.map((file) => ({
         filename: file.filename,
         content: Buffer.from(file.content_base64, "base64"),
