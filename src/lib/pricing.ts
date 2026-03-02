@@ -209,19 +209,17 @@ export function getLockedDiscountRateFromTransactions(
   const manualRate = Number(manualLockedRate);
   const hasManualRate = Number.isFinite(manualRate) && manualRate > 0 && manualRate <= 1;
 
+  // 先尊重会员管理手动设置的当前档位（余额>0时生效）。
+  // 先不做“充值自动变档”，由店员手工维护。
+  if (memberBalance > 0 && hasManualRate) {
+    return manualRate;
+  }
+
   if (cycleRate !== null) {
     if (pendingRate !== null) {
       return Math.min(cycleRate, pendingRate);
     }
     return cycleRate;
-  }
-
-  // 导入会员可手动设置当前档位：只在还有原余额时生效；余额用完后自动失效。
-  if (memberBalance > 0 && hasManualRate) {
-    if (pendingRate !== null) {
-      return Math.min(manualRate, pendingRate);
-    }
-    return manualRate;
   }
 
   if (pendingRate !== null) {
