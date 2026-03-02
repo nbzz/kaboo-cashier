@@ -796,6 +796,10 @@ export default function QuickEntry() {
   }
 
   async function submitCheckout() {
+    if (updatingTier) {
+      setError(t("手動折扣正在更新，請稍候再提交", "Manual tier is updating, please wait"));
+      return;
+    }
     if (selectedItems.length === 0) {
       setError(t("請至少選擇 1 個項目", "Please select at least 1 item"));
       return;
@@ -984,7 +988,10 @@ export default function QuickEntry() {
   }
 
   function openConfirmSubmit() {
-    if (submitLoading) {
+    if (submitLoading || updatingTier) {
+      if (updatingTier) {
+        setError(t("手動折扣正在更新，請稍候", "Manual tier is updating, please wait"));
+      }
       return;
     }
     if (selectedItems.length === 0) {
@@ -1495,32 +1502,40 @@ export default function QuickEntry() {
                 className="h-10 w-56 rounded-lg border border-slate-200 px-3"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="text-sm text-slate-600">{t("手動折扣", "Manual tier")}</label>
-              <select
-                value={
-                  selectedMember.manual_locked_discount_rate === undefined
-                    ? ""
-                    : String(selectedMember.manual_locked_discount_rate)
-                }
-                onChange={(event) => {
-                  void updateMemberTier(event.target.value);
-                }}
-                disabled={updatingTier}
-                className="h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-700 disabled:opacity-60"
-              >
-                <option value="">{t("自動（按歷史/充值）", "Auto (history/top-up)")}</option>
-                {manualTierOptions.map((rate) => {
-                  const discountText = (rate * 10).toFixed(rate * 10 % 1 === 0 ? 0 : 1);
-                  return (
-                    <option key={rate} value={rate}>
-                      {`${discountText}${t("折", " off")} (${(rate * 100).toFixed(0)}%)`}
-                    </option>
-                  );
-                })}
-              </select>
-              {tierUpdateMessage && <span className="text-xs text-emerald-700">{tierUpdateMessage}</span>}
-            </div>
+          </div>
+        )}
+
+        {selectedMember && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3">
+            <label className="text-sm text-slate-600">{t("手動折扣", "Manual tier")}</label>
+            <select
+              value={
+                selectedMember.manual_locked_discount_rate === undefined
+                  ? ""
+                  : String(selectedMember.manual_locked_discount_rate)
+              }
+              onChange={(event) => {
+                void updateMemberTier(event.target.value);
+              }}
+              disabled={updatingTier || submitLoading}
+              className="h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-700 disabled:opacity-60"
+            >
+              <option value="">{t("自動（按歷史/充值）", "Auto (history/top-up)")}</option>
+              {manualTierOptions.map((rate) => {
+                const discountText = (rate * 10).toFixed(rate * 10 % 1 === 0 ? 0 : 1);
+                return (
+                  <option key={rate} value={rate}>
+                    {`${discountText}${t("折", " off")} (${(rate * 100).toFixed(0)}%)`}
+                  </option>
+                );
+              })}
+            </select>
+            {updatingTier && (
+              <span className="text-xs text-slate-500">
+                {t("正在更新手動折扣...", "Updating manual tier...")}
+              </span>
+            )}
+            {tierUpdateMessage && <span className="text-xs text-emerald-700">{tierUpdateMessage}</span>}
           </div>
         )}
 
@@ -1852,10 +1867,12 @@ export default function QuickEntry() {
         <button
           type="button"
           onClick={openConfirmSubmit}
-          disabled={submitLoading}
+          disabled={submitLoading || updatingTier}
           className="mt-4 h-12 w-full rounded-2xl bg-cyan-700 text-lg font-semibold text-white disabled:opacity-60"
         >
-          {submitLoading
+          {updatingTier
+            ? t("折扣更新中...", "Updating tier...")
+            : submitLoading
             ? submitStage === "SAVING"
               ? t("正在記賬...", "Saving...")
               : t("正在發送郵件...", "Sending email...")
