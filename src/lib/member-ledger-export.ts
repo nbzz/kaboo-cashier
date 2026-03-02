@@ -37,6 +37,9 @@ const MEMBER_IMPORT_TEMPLATE_COLS = [
   { wch: 28 },
 ] as const;
 
+const MEMBER_TEMPLATE_DATE_COLS = [5, 8] as const;
+const MEMBER_TEMPLATE_MIN_ROWS = 200;
+
 function formatMoney(value: number) {
   return `HK$${Number(value || 0).toLocaleString("zh-HK", {
     minimumFractionDigits: 2,
@@ -166,6 +169,61 @@ function createMemberImportTemplateRows(members?: Member[]) {
     );
   }
   return rows;
+}
+
+function applyTemplateRowFormat(sheet: XLSX.WorkSheet, minRows = MEMBER_TEMPLATE_MIN_ROWS) {
+  const colCount = MEMBER_IMPORT_TEMPLATE_HEADERS.length;
+  const currentRef = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]) : null;
+  const currentRowCount = currentRef ? currentRef.e.r + 1 : 2;
+  const targetRowCount = Math.max(currentRowCount, 1 + minRows);
+
+  const templateRowIndex = 1; // Excel 第 2 行（示例行）
+  MEMBER_TEMPLATE_DATE_COLS.forEach((colIndex) => {
+    const addr = XLSX.utils.encode_cell({ r: templateRowIndex, c: colIndex });
+    const raw = sheet[addr] as XLSX.CellObject | undefined;
+    const cell = raw ?? ({ t: "s", v: "" } as XLSX.CellObject);
+    cell.t = "s";
+    cell.z = "@";
+    if (!raw) {
+      sheet[addr] = cell;
+    }
+  });
+
+  const templateFormats = Array.from({ length: colCount }, (_, colIndex) => {
+    const addr = XLSX.utils.encode_cell({ r: templateRowIndex, c: colIndex });
+    const cell = sheet[addr] as XLSX.CellObject | undefined;
+    return {
+      z: cell?.z,
+      s: cell?.s,
+    };
+  });
+
+  for (let rowIndex = templateRowIndex + 1; rowIndex < targetRowCount; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < colCount; colIndex += 1) {
+      const addr = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+      const existing = sheet[addr] as XLSX.CellObject | undefined;
+      const cell = existing ?? ({ t: "s", v: "" } as XLSX.CellObject);
+      const format = templateFormats[colIndex];
+      if (format.z !== undefined) {
+        cell.z = format.z;
+      }
+      if (format.s !== undefined) {
+        cell.s = format.s;
+      }
+      if (MEMBER_TEMPLATE_DATE_COLS.includes(colIndex as (typeof MEMBER_TEMPLATE_DATE_COLS)[number])) {
+        cell.t = "s";
+        cell.z = "@";
+      }
+      if (!existing) {
+        sheet[addr] = cell;
+      }
+    }
+  }
+
+  sheet["!ref"] = XLSX.utils.encode_range({
+    s: { r: 0, c: 0 },
+    e: { r: targetRowCount - 1, c: colCount - 1 },
+  });
 }
 
 interface MemberLedgerWorkbookOptions {
@@ -383,6 +441,7 @@ export async function buildMemberLedgerWorkbook(options?: MemberLedgerWorkbookOp
     const memberTemplateRows = createMemberImportTemplateRows(sortedMembers);
     const memberTemplateSheet = XLSX.utils.aoa_to_sheet(memberTemplateRows);
     memberTemplateSheet["!cols"] = [...MEMBER_IMPORT_TEMPLATE_COLS];
+    applyTemplateRowFormat(memberTemplateSheet);
     XLSX.utils.book_append_sheet(workbook, memberTemplateSheet, "導入模板_會員");
 
     const txnTemplateRows: Array<Array<string | number>> = [
@@ -476,6 +535,7 @@ export async function exportMemberImportTemplateWorkbook() {
   const templateRows = createMemberImportTemplateRows();
   const templateSheet = XLSX.utils.aoa_to_sheet(templateRows);
   templateSheet["!cols"] = [...MEMBER_IMPORT_TEMPLATE_COLS];
+  applyTemplateRowFormat(templateSheet);
   XLSX.utils.book_append_sheet(workbook, templateSheet, "導入模板_會員");
 
   const fileName = `會員導入模板_${nowHongKong().bizDate}.xlsx`;

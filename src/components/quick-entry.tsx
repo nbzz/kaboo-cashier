@@ -7,6 +7,7 @@ import {
   getStoreProfileLocal,
   getTransactionsLocal,
   searchMembersLocal,
+  upsertMemberLocal,
 } from "@/lib/local-db";
 import { executeCheckoutLocal } from "@/lib/local-transactions";
 import {
@@ -222,6 +223,8 @@ export default function QuickEntry() {
   const [mailStatusText, setMailStatusText] = useState("");
   const [lastMailPayload, setLastMailPayload] = useState<ReceiptMailPayload | null>(null);
   const [lastSummary, setLastSummary] = useState<CheckoutSummary | null>(null);
+  const [updatingTier, setUpdatingTier] = useState(false);
+  const [tierUpdateMessage, setTierUpdateMessage] = useState("");
 
   async function loadBaseData() {
     const [localConfig, localPriceList, localTransactions, localStoreProfile] = await Promise.all([
@@ -539,6 +542,17 @@ export default function QuickEntry() {
     return rows.join(" / ");
   }, [config, isSettlementEnglish]);
 
+  const manualTierOptions = useMemo(() => {
+    const rates = new Set<number>();
+    (config?.discountTiers ?? []).forEach((tier) => {
+      if (Number.isFinite(tier.rate) && tier.rate > 0 && tier.rate <= 1) {
+        rates.add(tier.rate);
+      }
+    });
+    rates.add(1);
+    return Array.from(rates).sort((a, b) => a - b);
+  }, [config]);
+
   const selectedCountMap = useMemo(() => {
     const map = new Map<string, number>();
     selectedItems.forEach((selected) => {
@@ -717,6 +731,45 @@ export default function QuickEntry() {
 
   function toggleManualDiscountPanel() {
     setShowManualDiscountPanel((prev) => !prev);
+  }
+
+  async function updateMemberTier(nextValue: string) {
+    if (!selectedMember) {
+      return;
+    }
+    const parsedRate = nextValue === "" ? undefined : Number(nextValue);
+    if (
+      nextValue !== "" &&
+      (!Number.isFinite(parsedRate) || !parsedRate || parsedRate <= 0 || parsedRate > 1)
+    ) {
+      return;
+    }
+
+    const prevMember = selectedMember;
+    const nextMember: Member = {
+      ...prevMember,
+      manual_locked_discount_rate: parsedRate,
+      updated_at: nowHongKong().createdAt,
+    };
+
+    setUpdatingTier(true);
+    setTierUpdateMessage("");
+    setSelectedMember(nextMember);
+    setMemberResults((prev) =>
+      prev.map((member) => (member.member_id === nextMember.member_id ? nextMember : member)),
+    );
+    try {
+      await upsertMemberLocal(nextMember);
+      setTierUpdateMessage(t("已更新手動折扣檔位", "Manual tier updated"));
+    } catch (updateError) {
+      setSelectedMember(prevMember);
+      setMemberResults((prev) =>
+        prev.map((member) => (member.member_id === prevMember.member_id ? prevMember : member)),
+      );
+      setError(updateError instanceof Error ? updateError.message : t("更新失敗", "Update failed"));
+    } finally {
+      setUpdatingTier(false);
+    }
   }
 
   async function retryMemberMail() {
@@ -1441,6 +1494,32 @@ export default function QuickEntry() {
                 placeholder={t("輸入自訂金額，例如 800", "Enter custom amount, e.g. 800")}
                 className="h-10 w-56 rounded-lg border border-slate-200 px-3"
               />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-sm text-slate-600">{t("手動折扣", "Manual tier")}</label>
+              <select
+                value={
+                  selectedMember.manual_locked_discount_rate === undefined
+                    ? ""
+                    : String(selectedMember.manual_locked_discount_rate)
+                }
+                onChange={(event) => {
+                  void updateMemberTier(event.target.value);
+                }}
+                disabled={updatingTier}
+                className="h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-700 disabled:opacity-60"
+              >
+                <option value="">{t("自動（按歷史/充值）", "Auto (history/top-up)")}</option>
+                {manualTierOptions.map((rate) => {
+                  const discountText = (rate * 10).toFixed(rate * 10 % 1 === 0 ? 0 : 1);
+                  return (
+                    <option key={rate} value={rate}>
+                      {`${discountText}${t("折", " off")} (${(rate * 100).toFixed(0)}%)`}
+                    </option>
+                  );
+                })}
+              </select>
+              {tierUpdateMessage && <span className="text-xs text-emerald-700">{tierUpdateMessage}</span>}
             </div>
           </div>
         )}
