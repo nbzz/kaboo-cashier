@@ -8,7 +8,7 @@ import {
 } from "@/lib/analytics";
 import { getMembersLocal, getPriceListLocal, getTransactionsLocal } from "@/lib/local-db";
 import { executeReversalLocal } from "@/lib/local-transactions";
-import { formatCurrency } from "@/lib/time";
+import { formatCurrency, nowHongKong } from "@/lib/time";
 import type { Member, TransactionRecord } from "@/lib/types";
 import { useEffect, useMemo, useState } from "react";
 
@@ -188,6 +188,7 @@ export default function TransactionsPanel() {
   const [allTransactions, setAllTransactions] = useState<TransactionRecord[]>([]);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [analysisRange, setAnalysisRange] = useState<AnalysisRange>("30D");
+  const [dailyRevenueDate, setDailyRevenueDate] = useState(() => nowHongKong().bizDate);
   const [categories, setCategories] = useState<string[]>([]);
   const [expandedTxnIds, setExpandedTxnIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -308,6 +309,44 @@ export default function TransactionsPanel() {
     const instantCashIn = topupIn + extraPay;
     return { memberDeduct, extraPay, serviceReceivable, topupIn, storedValueChange, instantCashIn };
   }, [rangeTransactions]);
+
+  const dailyRevenueMetrics = useMemo(() => {
+    const targetDate = dailyRevenueDate;
+    if (!targetDate) {
+      return {
+        spendRevenue: 0,
+        topupIn: 0,
+        instantCashIn: 0,
+        spendCount: 0,
+      };
+    }
+
+    let spendRevenue = 0;
+    let topupIn = 0;
+    let extraPay = 0;
+    let spendCount = 0;
+
+    allTransactions.forEach((row) => {
+      if (row.biz_date !== targetDate) {
+        return;
+      }
+      if (row.txn_type === "SPEND") {
+        const externalPay = row.external_pay_amount ?? 0;
+        spendRevenue += row.net_amount + externalPay;
+        extraPay += externalPay;
+        spendCount += 1;
+      } else if (row.txn_type === "TOPUP") {
+        topupIn += row.net_amount;
+      }
+    });
+
+    return {
+      spendRevenue,
+      topupIn,
+      instantCashIn: topupIn + extraPay,
+      spendCount,
+    };
+  }, [allTransactions, dailyRevenueDate]);
 
   const categoryShare = useMemo(() => {
     const map = new Map<string, number>();
@@ -458,6 +497,53 @@ export default function TransactionsPanel() {
               {item.label}
             </button>
           ))}
+        </div>
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-900">指定日期營收</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={dailyRevenueDate}
+                onChange={(event) => setDailyRevenueDate(event.target.value)}
+                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setDailyRevenueDate(nowHongKong().bizDate)}
+                className="h-10 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700"
+              >
+                今天
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-xs text-slate-500">當天營收（消費應收）</p>
+              <p className="text-lg font-bold text-cyan-700">
+                {formatCurrency(dailyRevenueMetrics.spendRevenue)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-xs text-slate-500">當天消費筆數</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {dailyRevenueMetrics.spendCount}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-xs text-slate-500">當天充值入賬</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {formatCurrency(dailyRevenueMetrics.topupIn)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white p-3">
+              <p className="text-xs text-slate-500">當天即時流入（充+另收）</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {formatCurrency(dailyRevenueMetrics.instantCashIn)}
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 grid gap-2 md:grid-cols-3 lg:grid-cols-6">
