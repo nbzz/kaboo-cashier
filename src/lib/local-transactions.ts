@@ -338,8 +338,53 @@ export async function executeReversalLocal(payload: ReversalInput) {
   if (!target) {
     throw new Error("找不到要撤回的流水");
   }
+  if (target.reversal_of_txn_id) {
+    throw new Error("沖正單不可再次撤回");
+  }
+  if (target.reversed_by_txn_id) {
+    throw new Error("這筆流水已撤回");
+  }
+
   if (!target.member_id) {
-    throw new Error("散客流水暫不支持撤回");
+    if (target.txn_type !== "SPEND") {
+      throw new Error("散客僅支持撤回消費流水");
+    }
+    const base = buildTransactionBase(
+      payload.request_id,
+      "",
+      target.member_name_snapshot || "散客",
+      payload.source_device,
+    );
+    const reversalRecord: TransactionRecord = {
+      txn_id: crypto.randomUUID(),
+      ...base,
+      txn_type: "SPEND",
+      items_json: "",
+      customer_gender: normalizeGender(target.customer_gender),
+      gross_amount: -Math.abs(target.gross_amount),
+      discount_rate: target.discount_rate > 0 ? target.discount_rate : 1,
+      net_amount: -Math.abs(target.net_amount),
+      external_pay_amount: -Math.abs(target.external_pay_amount ?? 0),
+      settlement_mode: "WALKIN_ORIGINAL",
+      pricing_basis: target.pricing_basis,
+      manual_price_adjusted: false,
+      payment_method: "BALANCE",
+      balance_before: 0,
+      balance_after: 0,
+      notes: `[撤回] 沖正散客消費 ${target.txn_id}`,
+      discount_reason: "REVERSAL",
+      source_device: payload.source_device,
+      reversal_of_txn_id: target.txn_id,
+    };
+    await appendTransactionsLocal([reversalRecord]);
+    await patchTransactionLocal(target.txn_id, {
+      reversed_by_txn_id: reversalRecord.txn_id,
+      notes: target.notes ? `${target.notes} ｜ 已撤回` : "已撤回",
+    });
+    return {
+      alreadyProcessed: false,
+      records: [reversalRecord],
+    };
   }
 
   const [member, allTransactions] = await Promise.all([
@@ -349,12 +394,6 @@ export async function executeReversalLocal(payload: ReversalInput) {
 
   if (!member) {
     throw new Error("找不到會員，無法撤回");
-  }
-  if (target.reversal_of_txn_id) {
-    throw new Error("沖正單不可再次撤回");
-  }
-  if (target.reversed_by_txn_id) {
-    throw new Error("這筆流水已撤回");
   }
 
   const latestMemberTxn = allTransactions.find((row) => row.member_id === target.member_id);

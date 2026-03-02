@@ -407,10 +407,12 @@ export default function TransactionsPanel() {
   }, [allTransactions]);
 
   function canReverse(row: TransactionRecord) {
-    if (!row.member_id) return false;
     if (row.reversal_of_txn_id) return false;
     if (row.reversed_by_txn_id) return false;
     if (reversedTargetIdSet.has(row.txn_id)) return false;
+    if (!row.member_id) {
+      return row.txn_type === "SPEND";
+    }
     return latestTxnByMember.get(row.member_id) === row.txn_id;
   }
 
@@ -441,7 +443,7 @@ export default function TransactionsPanel() {
 
   async function reverseTransaction(row: TransactionRecord) {
     if (!canReverse(row)) {
-      setError("只能撤回該會員最近一筆且未撤回的流水");
+      setError("此流水當前不可撤回");
       return;
     }
     const ok = window.confirm(`確定撤回這筆${formatTxnTypeLabel(row.txn_type)}流水？`);
