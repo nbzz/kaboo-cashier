@@ -63,6 +63,8 @@ const MEMBER_COLUMN_LABEL: Record<MemberSortColumn, string> = {
   favorite: "偏好 Top3",
 };
 
+const GENDER_OPTIONS = ["", "女", "男"] as const;
+
 interface MemberForm {
   name: string;
   phone: string;
@@ -1095,16 +1097,21 @@ export default function MembersPanel() {
               <option value="9折">9折</option>
               <option value="原價">原價</option>
             </select>
-            <input
+            <select
               value={form.gender}
               onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))}
-              placeholder="性別"
-              className="h-10 rounded-lg border border-slate-200 px-3"
-            />
+              className="h-10 rounded-lg border border-slate-200 px-3 text-slate-700"
+            >
+              {GENDER_OPTIONS.map((gender) => (
+                <option key={gender || "empty"} value={gender}>
+                  {gender || "性別（可選）"}
+                </option>
+              ))}
+            </select>
             <input
+              type="date"
               value={form.birthday}
               onChange={(event) => setForm((prev) => ({ ...prev, birthday: event.target.value }))}
-              placeholder="生日 YYYY-MM-DD"
               className="h-10 rounded-lg border border-slate-200 px-3"
             />
             <input
@@ -1284,16 +1291,21 @@ export default function MembersPanel() {
               <option value="9折">9折</option>
               <option value="原價">原價</option>
             </select>
-            <input
+            <select
               value={form.gender}
               onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))}
-              placeholder="性別"
-              className="h-10 rounded-lg border border-slate-200 px-3"
-            />
+              className="h-10 rounded-lg border border-slate-200 px-3 text-slate-700"
+            >
+              {GENDER_OPTIONS.map((gender) => (
+                <option key={gender || "empty"} value={gender}>
+                  {gender || "性別（可選）"}
+                </option>
+              ))}
+            </select>
             <input
+              type="date"
               value={form.birthday}
               onChange={(event) => setForm((prev) => ({ ...prev, birthday: event.target.value }))}
-              placeholder="生日 YYYY-MM-DD"
               className="h-10 rounded-lg border border-slate-200 px-3"
             />
             <input
