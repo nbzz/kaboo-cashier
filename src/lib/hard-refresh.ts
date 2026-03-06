@@ -28,7 +28,7 @@ async function clearCaches() {
 export async function runHardRefresh() {
   try {
     await Promise.all([clearServiceWorkers(), clearCaches()]);
-    const url = new URL(window.location.href);
+    const url = new URL("/quick", window.location.origin);
     url.searchParams.set("__hard_reload", String(Date.now()));
     window.location.replace(url.toString());
     return;
