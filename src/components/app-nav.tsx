@@ -1,5 +1,6 @@
 "use client";
 
+import { runHardRefresh } from "@/lib/hard-refresh";
 import { t } from "@/lib/i18n";
 import clsx from "clsx";
 import Link from "next/link";
@@ -25,32 +26,7 @@ export default function AppNav() {
       return;
     }
     setRefreshing(true);
-    try {
-      if ("serviceWorker" in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(
-          registrations.map(async (registration) => {
-            try {
-              await registration.update();
-              await registration.unregister();
-            } catch {
-              // ignore and continue
-            }
-          }),
-        );
-      }
-
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((key) => caches.delete(key)));
-      }
-
-      const url = new URL(window.location.href);
-      url.searchParams.set("__hard_reload", String(Date.now()));
-      window.location.replace(url.toString());
-    } catch {
-      window.location.reload();
-    }
+    await runHardRefresh();
   }
 
   return (
