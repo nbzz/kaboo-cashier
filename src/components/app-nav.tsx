@@ -66,19 +66,12 @@ export default function AppNav() {
             title="強制刷新（清快取）"
             aria-label="強制刷新（清快取）"
           >
-            <svg
-              viewBox="0 0 24 24"
+            <span
               aria-hidden="true"
-              className={clsx("h-4 w-4", refreshing && "animate-spin")}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              className={clsx("text-base leading-none", refreshing && "animate-spin")}
             >
-              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-              <polyline points="21 3 21 9 15 9" />
-            </svg>
+              ↻
+            </span>
           </button>
         </div>
       </div>
@@ -113,19 +106,12 @@ export default function AppNav() {
           title="強制刷新（清快取）"
           aria-label="強制刷新（清快取）"
         >
-          <svg
-            viewBox="0 0 24 24"
+          <span
             aria-hidden="true"
-            className={clsx("h-4 w-4", refreshing && "animate-spin")}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            className={clsx("text-base leading-none", refreshing && "animate-spin")}
           >
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-            <polyline points="21 3 21 9 15 9" />
-          </svg>
+            ↻
+          </span>
         </button>
       </div>
     </header>
