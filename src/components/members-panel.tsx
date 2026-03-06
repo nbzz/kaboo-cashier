@@ -34,19 +34,19 @@ type MemberSortColumn =
 const DEFAULT_MEMBER_TABLE_COLUMN_ORDER: MemberSortColumn[] = [
   "name",
   "phone",
-  "gender",
-  "email",
-  "notes",
-  "register_date",
-  "tier",
   "balance",
+  "tier",
+  "email",
   "total_topup",
   "total_spend",
   "last_spend",
   "favorite",
+  "gender",
+  "register_date",
+  "notes",
 ];
 
-const MEMBER_COLUMN_ORDER_KEY = "members:column-order:v1";
+const MEMBER_COLUMN_ORDER_KEY = "members:column-order:v2";
 
 const MEMBER_COLUMN_LABEL: Record<MemberSortColumn, string> = {
   name: "會員",
@@ -425,6 +425,41 @@ export default function MembersPanel() {
     });
     return idSet;
   }, [results, memberStats]);
+
+  const listSummary = useMemo(() => {
+    let activeCount = 0;
+    let totalBalance = 0;
+    let totalTopup = 0;
+    let totalSpend = 0;
+    let vipCount = 0;
+
+    sortedResults.forEach((member) => {
+      if (member.active) {
+        activeCount += 1;
+      }
+      if (member.active && bigCustomerIds.has(member.member_id)) {
+        vipCount += 1;
+      }
+
+      totalBalance += member.balance;
+      const stat = memberStats.get(member.member_id);
+      totalTopup += stat?.totalTopup ?? 0;
+      totalSpend += stat?.totalSpend ?? 0;
+    });
+
+    const memberCount = sortedResults.length;
+    const inactiveCount = memberCount - activeCount;
+    return {
+      memberCount,
+      activeCount,
+      inactiveCount,
+      totalBalance,
+      totalTopup,
+      totalSpend,
+      netStored: totalTopup - totalSpend,
+      vipCount,
+    };
+  }, [sortedResults, memberStats, bigCustomerIds]);
 
   const selectedStat = selectedMember
     ? memberStats.get(selectedMember.member_id)
@@ -926,18 +961,16 @@ export default function MembersPanel() {
     column: MemberSortColumn,
   ) {
     if (column === "name") {
-      return (
-        <>
-          <p className="font-semibold text-slate-900">{member.name}</p>
-          <p className="truncate text-xs text-slate-500">{member.notes || "無備註"}</p>
-        </>
-      );
+      return <p className="font-semibold text-slate-900">{member.name}</p>;
     }
     if (column === "phone") {
+      const contactText = (member.wechat_or_whatsapp || "").trim();
       return (
         <>
           <p>{member.phone}</p>
-          <p className="truncate text-xs text-slate-500">{member.wechat_or_whatsapp || "-"}</p>
+          {contactText && (
+            <p className="truncate text-xs text-slate-500">{contactText}</p>
+          )}
         </>
       );
     }
@@ -1150,16 +1183,54 @@ export default function MembersPanel() {
 
       <section className="rounded-2xl bg-white p-2 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 px-2 pt-1">
-          <p className="text-xs text-slate-500">
+          <p className="text-sm font-medium text-slate-500">
             尊貴客戶標記規則：充值總額 Top3 或當前餘額 ≥ {formatCurrency(5000)}
+          </p>
+          <p className="text-sm font-semibold text-slate-700">
+            會員總數：{listSummary.memberCount}
+            {showInactive
+              ? `（有效 ${listSummary.activeCount}｜已刪除 ${listSummary.inactiveCount}）`
+              : ""}
           </p>
           <button
             type="button"
             onClick={resetColumnOrder}
-            className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+            className="h-8 rounded-lg bg-slate-100 px-3 text-sm font-semibold text-slate-700"
           >
             還原欄位順序
           </button>
+        </div>
+        <div className="mx-2 mt-2 grid grid-cols-5 gap-2">
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-slate-500">餘額合計</p>
+            <p className="mt-1 text-lg font-semibold leading-none tabular-nums text-slate-900">
+              {formatCurrency(listSummary.totalBalance)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-slate-500">累計充值</p>
+            <p className="mt-1 text-lg font-semibold leading-none tabular-nums text-slate-900">
+              {formatCurrency(listSummary.totalTopup)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-slate-500">累計消費</p>
+            <p className="mt-1 text-lg font-semibold leading-none tabular-nums text-slate-900">
+              {formatCurrency(listSummary.totalSpend)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-slate-500">淨儲值</p>
+            <p className="mt-1 text-lg font-semibold leading-none tabular-nums text-slate-900">
+              {formatCurrency(listSummary.netStored)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <p className="text-[11px] font-medium tracking-wide text-slate-500">尊貴客戶</p>
+            <p className="mt-1 text-lg font-semibold leading-none tabular-nums text-slate-900">
+              {listSummary.vipCount} 位
+            </p>
+          </div>
         </div>
         {showColumnSettings && (
           <div className="mx-2 mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
@@ -1189,7 +1260,7 @@ export default function MembersPanel() {
             </div>
           </div>
         )}
-        <div className="max-h-[720px] overflow-auto">
+        <div className="mt-3 overflow-x-auto">
           <table className="min-w-[1480px] w-full text-sm">
             <thead className="sticky top-0 bg-slate-50 text-slate-600">
               <tr>
@@ -1693,7 +1764,7 @@ export default function MembersPanel() {
               <option value="SPEND">消費</option>
             </select>
           </div>
-          <div className="mt-2 max-h-[260px] overflow-auto rounded-lg border border-slate-200">
+          <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-50 text-slate-600">
                 <tr>
