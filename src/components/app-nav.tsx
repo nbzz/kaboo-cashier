@@ -4,6 +4,7 @@ import { t } from "@/lib/i18n";
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 const NAV_ITEMS = [
   { href: "/quick", label: t("quickEntry") },
@@ -13,8 +14,45 @@ const NAV_ITEMS = [
   { href: "/sync", label: "數據同步" },
 ];
 
+const NAV_BUTTON_BASE = "inline-flex h-10 items-center rounded-xl px-4 text-sm font-semibold";
+
 export default function AppNav() {
   const pathname = usePathname();
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function hardRefresh() {
+    if (refreshing) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(async (registration) => {
+            try {
+              await registration.update();
+              await registration.unregister();
+            } catch {
+              // ignore and continue
+            }
+          }),
+        );
+      }
+
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("__hard_reload", String(Date.now()));
+      window.location.replace(url.toString());
+    } catch {
+      window.location.reload();
+    }
+  }
+
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-8">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
@@ -22,13 +60,13 @@ export default function AppNav() {
           <p className="text-lg font-semibold text-slate-900">{t("appName")}</p>
           <p className="text-xs text-slate-500">本地離線模式（IndexedDB）</p>
         </div>
-        <div className="hidden gap-2 md:flex">
+        <div className="hidden items-center gap-2 md:flex">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
-                "rounded-xl px-4 py-2 text-sm font-semibold",
+                NAV_BUTTON_BASE,
                 pathname === item.href
                   ? "bg-cyan-700 text-white"
                   : "bg-slate-100 text-slate-700",
@@ -37,15 +75,45 @@ export default function AppNav() {
               {item.label}
             </Link>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              void hardRefresh();
+            }}
+            disabled={refreshing}
+            className={clsx(
+              NAV_BUTTON_BASE,
+              "w-10 justify-center px-0",
+              "bg-slate-100 text-slate-700 hover:bg-slate-200",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+            title="強制刷新（清快取）"
+            aria-label="強制刷新（清快取）"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className={clsx("h-4 w-4", refreshing && "animate-spin")}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+              <polyline points="21 3 21 9 15 9" />
+            </svg>
+          </button>
         </div>
       </div>
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 md:hidden">
+      <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-1 md:hidden">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.href}
             href={item.href}
             className={clsx(
-              "whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold",
+              NAV_BUTTON_BASE,
+              "whitespace-nowrap",
               pathname === item.href
                 ? "bg-cyan-700 text-white"
                 : "bg-slate-100 text-slate-700",
@@ -54,6 +122,35 @@ export default function AppNav() {
             {item.label}
           </Link>
         ))}
+        <button
+          type="button"
+          onClick={() => {
+            void hardRefresh();
+          }}
+          disabled={refreshing}
+          className={clsx(
+            NAV_BUTTON_BASE,
+            "h-10 w-10 shrink-0 justify-center px-0",
+            "bg-slate-100 text-slate-700",
+            "disabled:cursor-not-allowed disabled:opacity-60",
+          )}
+          title="強制刷新（清快取）"
+          aria-label="強制刷新（清快取）"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            className={clsx("h-4 w-4", refreshing && "animate-spin")}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <polyline points="21 3 21 9 15 9" />
+          </svg>
+        </button>
       </div>
     </header>
   );
