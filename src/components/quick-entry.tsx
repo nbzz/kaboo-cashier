@@ -23,7 +23,7 @@ import {
 } from "@/lib/pricing";
 import { formatCurrency, nowHongKong } from "@/lib/time";
 import type { ConfigRules, Member, PriceItem, StoreProfile, TransactionRecord } from "@/lib/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface CheckoutPreview {
   gross: number;
@@ -206,6 +206,8 @@ export default function QuickEntry() {
   const [walkInGender, setWalkInGender] = useState<"" | "女" | "男">("");
 
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+  const [manualPriceDraftMap, setManualPriceDraftMap] = useState<Record<string, string>>({});
+  const manualPriceInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [topupAmount, setTopupAmount] = useState<number>(0);
   const [extraDiscountAmount, setExtraDiscountAmount] = useState<number>(0);
   const [applyFloorDiscount, setApplyFloorDiscount] = useState<boolean>(false);
@@ -717,6 +719,103 @@ export default function QuickEntry() {
 
   function removeItem(itemId: string) {
     setSelectedItems((prev) => prev.filter((row) => row.item_id !== itemId));
+    setManualPriceDraftMap((prev) => {
+      if (!(itemId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+    delete manualPriceInputRefs.current[itemId];
+  }
+
+  function setManualPriceInputRef(itemId: string, node: HTMLInputElement | null) {
+    if (!node) {
+      delete manualPriceInputRefs.current[itemId];
+      return;
+    }
+    manualPriceInputRefs.current[itemId] = node;
+  }
+
+  function focusManualPriceInput(itemId: string) {
+    window.setTimeout(() => {
+      const input = manualPriceInputRefs.current[itemId];
+      if (!input) {
+        return;
+      }
+      input.focus();
+      const cursor = input.value.length;
+      try {
+        input.setSelectionRange(cursor, cursor);
+      } catch {
+        // 部分浏览器不支持 setSelectionRange
+      }
+    }, 0);
+  }
+
+  function normalizeManualPriceInput(raw: string) {
+    const replaced = raw.replace(/[，。]/g, ".").replace(/,/g, ".");
+    let normalized = "";
+    let hasDot = false;
+    for (const char of replaced) {
+      if (/\d/.test(char)) {
+        normalized += char;
+        continue;
+      }
+      if (char === "." && !hasDot) {
+        normalized += ".";
+        hasDot = true;
+      }
+    }
+    return normalized;
+  }
+
+  function getManualDraftValue(itemId: string, fallback?: number) {
+    const fromDraft = manualPriceDraftMap[itemId];
+    if (fromDraft !== undefined) {
+      return fromDraft;
+    }
+    if (typeof fallback === "number" && Number.isFinite(fallback)) {
+      return String(fallback);
+    }
+    return "";
+  }
+
+  function applyManualPriceDraft(itemId: string, raw: string) {
+    const nextDraft = normalizeManualPriceInput(raw);
+    setManualPriceDraftMap((prev) => ({ ...prev, [itemId]: nextDraft }));
+    if (nextDraft === "" || nextDraft === ".") {
+      updateItem(itemId, { price_choice: "MANUAL", manual_unit_price: undefined });
+      return;
+    }
+    const parsed = Number(nextDraft);
+    updateItem(itemId, {
+      price_choice: "MANUAL",
+      manual_unit_price: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined,
+    });
+  }
+
+  function appendManualDecimalPoint(itemId: string, fallback?: number) {
+    const current = getManualDraftValue(itemId, fallback);
+    if (current.includes(".")) {
+      return;
+    }
+    const next = current ? `${current}.` : "0.";
+    applyManualPriceDraft(itemId, next);
+  }
+
+  function backspaceManualPrice(itemId: string, fallback?: number) {
+    const current = getManualDraftValue(itemId, fallback);
+    if (!current) {
+      applyManualPriceDraft(itemId, "");
+      return;
+    }
+    applyManualPriceDraft(itemId, current.slice(0, -1));
+  }
+
+  function clearManualPrice(itemId: string) {
+    applyManualPriceDraft(itemId, "");
   }
 
   function toggleTopupPanel() {
@@ -878,6 +977,7 @@ export default function QuickEntry() {
       }
 
       setSelectedItems([]);
+      setManualPriceDraftMap({});
       setTopupAmount(0);
       setExtraDiscountAmount(0);
       setApplyFloorDiscount(false);
@@ -1242,6 +1342,10 @@ export default function QuickEntry() {
               if (!item) return null;
               const choiceMeta = getPriceChoiceMeta(item);
               const showManualInput = choiceMeta.requiresChoice && selected.price_choice === "MANUAL";
+              const manualDraft = getManualDraftValue(
+                selected.item_id,
+                selected.manual_unit_price,
+              );
               return (
                 <div key={selected.item_id} className="rounded-xl border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-3">
@@ -1346,12 +1450,16 @@ export default function QuickEntry() {
                         )}
                         <button
                           type="button"
+                          onMouseDown={(event) => event.preventDefault()}
                           onClick={() =>
-                            updateItem(selected.item_id, {
-                              price_choice: "MANUAL",
-                              manual_unit_price:
-                                selected.price_choice === "MANUAL" ? selected.manual_unit_price : undefined,
-                            })
+                            {
+                              updateItem(selected.item_id, {
+                                price_choice: "MANUAL",
+                                manual_unit_price:
+                                  selected.price_choice === "MANUAL" ? selected.manual_unit_price : undefined,
+                              });
+                              focusManualPriceInput(selected.item_id);
+                            }
                           }
                           className={`h-10 rounded-lg border text-sm font-semibold ${
                             selected.price_choice === "MANUAL"
@@ -1364,26 +1472,52 @@ export default function QuickEntry() {
                       </div>
 
                       {showManualInput && (
-                        <div className="mt-2">
+                        <div className="mt-2 space-y-2">
                           <input
                             type="text"
                             inputMode="decimal"
                             pattern="[0-9]*[.]?[0-9]*"
-                            value={selected.manual_unit_price ?? ""}
-                            onChange={(event) =>
-                              updateItem(selected.item_id, {
-                                price_choice: "MANUAL",
-                                manual_unit_price:
-                                  event.target.value === ""
-                                    ? undefined
-                                    : Number.isFinite(Number(event.target.value))
-                                      ? Number(event.target.value)
-                                      : undefined,
-                              })
-                            }
+                            ref={(node) => setManualPriceInputRef(selected.item_id, node)}
+                            value={manualDraft}
+                            onChange={(event) => applyManualPriceDraft(selected.item_id, event.target.value)}
                             placeholder="請輸入本次單價"
                             className="h-11 w-full rounded-lg border border-amber-300 bg-white px-3"
                           />
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                appendManualDecimalPoint(selected.item_id, selected.manual_unit_price);
+                                focusManualPriceInput(selected.item_id);
+                              }}
+                              className="h-10 rounded-lg border border-amber-300 bg-white text-sm font-semibold text-amber-800"
+                            >
+                              小數點 .
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                backspaceManualPrice(selected.item_id, selected.manual_unit_price);
+                                focusManualPriceInput(selected.item_id);
+                              }}
+                              className="h-10 rounded-lg border border-amber-300 bg-white text-sm font-semibold text-amber-800"
+                            >
+                              退格
+                            </button>
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                clearManualPrice(selected.item_id);
+                                focusManualPriceInput(selected.item_id);
+                              }}
+                              className="h-10 rounded-lg border border-amber-300 bg-white text-sm font-semibold text-amber-800"
+                            >
+                              清空
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
